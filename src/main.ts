@@ -67,7 +67,7 @@ interface Plugin {
 
 const gridContainer = document.getElementById("block-grid");
 const loadingText = document.getElementById("loading");
-const searchInput = document.getElementById("search-input");
+const searchInput = document.getElementById("search-input") as HTMLInputElement;
 const modal = document.getElementById("playground-modal");
 const iframe = document.getElementById("playground-iframe") as HTMLIFrameElement;
 const closeBtn = document.getElementById("close-modal");
@@ -93,12 +93,15 @@ function buildApiUrl(page = 1, search = "") {
     const baseUrl =
         "https://api.wordpress.org/plugins/info/1.2/?action=query_plugins";
     const params = new URLSearchParams();
-    params.append("request[block]", "blocks");
+    if (search) {
+        // When searching, don't filter by blocks to get all matching plugins
+        params.append("request[search]", search);
+    } else {
+        // Only filter by blocks when not searching
+        params.append("request[block]", "blocks");
+    }
     params.append("request[per_page]", "15");
     params.append("request[page]", page.toString());
-    if (search) {
-        params.append("request[search]", search);
-    }
     return `${baseUrl}&${params.toString()}`;
 }
 
@@ -122,7 +125,6 @@ async function fetchBlocks(page = 1, search = "", append = false) {
         const url = buildApiUrl(page, search);
         const response = await fetch(url);
         const data = await response.json();
-
         const newPlugins = data.plugins || [];
 
         // 1. Update "Reached End" state
