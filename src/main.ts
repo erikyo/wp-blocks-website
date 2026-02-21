@@ -69,7 +69,7 @@ const gridContainer = document.getElementById("block-grid");
 const loadingText = document.getElementById("loading");
 const searchInput = document.getElementById("search-input");
 const modal = document.getElementById("playground-modal");
-const iframe = document.getElementById("playground-iframe");
+const iframe = document.getElementById("playground-iframe") as HTMLIFrameElement;
 const closeBtn = document.getElementById("close-modal");
 
 if (
