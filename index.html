@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WordPress Block Explorer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="header">
+  <h1>Explore & Test WordPress Blocks</h1>
+  <p>Click on any block to test it live in your browser!</p>
+</div>
+
+<div id="loading" class="loading">Fetching blocks from WordPress.org...</div>
+<div id="block-grid" class="block-grid"></div>
+
+<div id="playground-modal" class="modal-overlay">
+  <div class="modal-content">
+    <button id="close-modal" class="close-btn">Close Preview</button>
+    <iframe id="playground-iframe" src=""></iframe>
+  </div>
+</div>
+<script src="dist/index.js" defer></script>
+</body>
+</html>
