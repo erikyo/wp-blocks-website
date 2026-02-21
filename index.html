@@ -1,16 +1,19 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WordPress Block Explorer</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wp-blocks</title>
 </head>
 <body>
 
 <div class="header">
   <h1>Explore & Test WordPress Blocks</h1>
   <p>Click on any block to test it live in your browser!</p>
+  <div class="search-container">
+    <input type="text" id="search-input" placeholder="Search blocks..." class="search-input">
+  </div>
 </div>
 
 <div id="loading" class="loading">Fetching blocks from WordPress.org...</div>
@@ -22,6 +25,7 @@
     <iframe id="playground-iframe" src=""></iframe>
   </div>
 </div>
-<script src="dist/index.js" defer></script>
+
+<script type="module" src="/src/main.ts"></script>
 </body>
 </html>
