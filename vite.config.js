@@ -1,4 +1,5 @@
-// vite.config.js
-export default {
-	base: "/wp-blocks-website/",
-};
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+	base: '/wp-blocks-website/',
+});
