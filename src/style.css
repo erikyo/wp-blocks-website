@@ -114,6 +114,51 @@ body {
 	text-overflow: ellipsis;
 }
 
+.blocks-section {
+	margin-bottom: 15px;
+}
+
+.blocks-title {
+	font-size: 0.85rem;
+	font-weight: 600;
+	color: #1a1a1a;
+	margin: 0 0 8px 0;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.blocks-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.block-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 10px;
+	background: #f8f9fa;
+	border-radius: 6px;
+	border-left: 3px solid #0073aa;
+	font-size: 0.8rem;
+}
+
+.block-name {
+	font-weight: 500;
+	color: #1a1a1a;
+	flex: 1;
+}
+
+.block-category {
+	font-size: 0.75rem;
+	color: #646970;
+	background: #e9ecef;
+	padding: 2px 6px;
+	border-radius: 3px;
+	text-transform: capitalize;
+}
+
 .plugin-stats {
 	display: flex;
 	justify-content: space-between;
@@ -173,6 +218,59 @@ body {
 
 .tested {
 	color: #757575;
+}
+
+.plugin-links {
+	display: flex;
+	gap: 10px;
+	margin-top: 15px;
+	padding-top: 15px;
+	border-top: 1px solid #f0f0f1;
+}
+
+.plugin-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px;
+	background: #f8f9fa;
+	border: 1px solid #ddd;
+	border-radius: 6px;
+	text-decoration: none;
+	font-size: 0.8rem;
+	color: #3c434e;
+	transition: all 0.2s ease;
+	flex: 1;
+	justify-content: center;
+}
+
+.plugin-link:hover {
+	background: #e9ecef;
+	border-color: #0073aa;
+	color: #0073aa;
+	transform: translateY(-1px);
+}
+
+.plugin-page-link {
+	background: #f0f6fc;
+	border-color: #0073aa;
+	color: #0073aa;
+}
+
+.plugin-page-link:hover {
+	background: #0073aa;
+	color: white;
+}
+
+.download-link {
+	background: #f6f7f7;
+	border-color: #2271b1;
+	color: #2271b1;
+}
+
+.download-link:hover {
+	background: #2271b1;
+	color: white;
 }
 
 /* Playground Modal Styles */

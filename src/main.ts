@@ -95,10 +95,11 @@ function buildApiUrl(page = 1, search = "") {
     const params = new URLSearchParams();
     if (search) {
         // When searching, don't filter by blocks to get all matching plugins
-        params.append("request[search]", search);
+        params.append("request[block]", search);
     } else {
         // Only filter by blocks when not searching
-        params.append("request[block]", "blocks");
+        params.append("request[block]", "block");
+        params.append("request[browse]", "popular");
     }
     params.append("request[per_page]", "15");
     params.append("request[page]", page.toString());
@@ -136,8 +137,26 @@ async function fetchBlocks(page = 1, search = "", append = false) {
         // 2. Update the master lists
         allPlugins = [...allPlugins, ...newPlugins];
 
-        // 3. ONLY pass the NEW plugins to the renderer to avoid duplicates
-        renderBlocks(newPlugins, append);
+        // 3. Filter plugins that have blocks
+        const pluginsWithBlocks = newPlugins.filter(plugin =>
+            plugin.blocks && Object.keys(plugin.blocks).length > 0
+        );
+
+        // 4. Check if we need to fetch more data (only for non-search requests)
+        const minPluginsNeeded = 3; // Minimum plugins needed to show at least one row
+        const currentBlockPlugins = allPlugins.filter(plugin =>
+            plugin.blocks && Object.keys(plugin.blocks).length > 0
+        ).length;
+
+        // If this is the first page, not a search, and we don't have enough block plugins, fetch more
+        if (!append && !search && currentBlockPlugins < minPluginsNeeded && !hasReachedEnd) {
+            console.log(`Only ${currentBlockPlugins} plugins with blocks found, fetching more...`);
+            await fetchBlocks(page + 1, search, true);
+            return;
+        }
+
+        // 5. ONLY pass the NEW plugins with blocks to the renderer to avoid duplicates
+        renderBlocks(pluginsWithBlocks, append);
 
         loadingText.style.display = "none";
         updateLoadMoreIndicator(!hasReachedEnd);
@@ -190,6 +209,17 @@ function renderBlocks(pluginsToRender: Plugin[], append = false) {
         // Extract clean author name
         const authorName = plugin.author.replace(/<[^>]*>/g, "").trim();
 
+        // Generate WordPress plugin page URL
+        const pluginPageUrl = `https://wordpress.org/plugins/${plugin.slug}/`;
+
+        // Generate formatted list of blocks
+        const blocksList = Object.values(plugin.blocks).map(block =>
+            `<div class="block-item">
+                <span class="block-name">${block.title}</span>
+                <span class="block-category">${block.category}</span>
+            </div>`
+        ).join('');
+
         const card = document.createElement("div");
         card.className = "block-card";
 
@@ -203,6 +233,12 @@ function renderBlocks(pluginsToRender: Plugin[], append = false) {
                 </div>
                 <div class="card-body">
                     <p class="plugin-description">${plugin.short_description || "No description available"}</p>
+                    <div class="blocks-section">
+                        <h4 class="blocks-title">Blocks Provided</h4>
+                        <div class="blocks-list">
+                            ${blocksList}
+                        </div>
+                    </div>
                     <div class="plugin-stats">
                         <div class="rating">
                             <span class="stars">${stars}</span>
@@ -216,6 +252,24 @@ function renderBlocks(pluginsToRender: Plugin[], append = false) {
                     <div class="plugin-meta">
                         <span class="version">v${plugin.version}</span>
                         <span class="tested">Tested up to ${plugin.tested}</span>
+                    </div>
+                    <div class="plugin-links">
+                        <a href="${pluginPageUrl}" target="_blank" rel="noopener noreferrer" class="plugin-link plugin-page-link" onclick="event.stopPropagation()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                <polyline points="15,3 21,3 21,9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                            WordPress Page
+                        </a>
+                        <a href="${plugin.download_link}" target="_blank" rel="noopener noreferrer" class="plugin-link download-link" onclick="event.stopPropagation()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7,10 12,15 17,10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Download
+                        </a>
                     </div>
                 </div>
             `;
