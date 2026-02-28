@@ -523,18 +523,15 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
 
         if (shouldContinueFetching || shouldContinueForInitialLoad) {
             console.log(`Auto-fetching page ${page + 1} - no blocks: ${noBlocksInBatch}, has plugins: ${hasPlugins}, needs initial: ${needsMoreInitialPlugins}, empty count: ${AppState.emptyResponseCount}`);
-            
-            // Store current page before auto-fetch
-            const userVisiblePage = AppState.currentPage;
-            
+
             AppState.currentPage = page + 1;
             updateHistory(AppState.searchTerm, AppState.currentPage, false);
-            
+
             // Update maxPageReached for auto-fetched pages
             if (AppState.currentPage > maxPageReached) {
                 maxPageReached = AppState.currentPage;
             }
-            
+
             try {
                 AppState.isLoading = false; // Allow recursive call
                 await fetchBlocks(AppState.currentPage, search, true, abortSignal);
@@ -1056,7 +1053,7 @@ const handleScroll = PerformanceUtils.throttle(() => {
         if (currentTime - lastScrollTriggerTime < 500) {
             return; // Skip if triggered too recently
         }
-        
+
         // Only load if we haven't already loaded this page
         // Check if current page is less than or equal to max page reached
         if (AppState.currentPage <= maxPageReached) {
