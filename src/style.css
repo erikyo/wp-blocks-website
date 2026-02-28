@@ -2,33 +2,95 @@ body {
 	font-family: system-ui, -apple-system, sans-serif;
 	background-color: #f0f0f1;
 	margin: 0;
-	padding: 20px;
+	padding: 0;
 }
 
+/* ── Header ── */
 .header {
+	background: #1d2327;
+	padding: 48px 24px 56px;
 	text-align: center;
-	margin-bottom: 40px;
+	position: relative;
+	overflow: hidden;
+	margin-bottom: 3rem;
+}
+
+/* Subtle diagonal stripe pattern — feels like WP admin bars */
+.header::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background: repeating-linear-gradient(-55deg,
+			transparent,
+			transparent 30px,
+			rgba(255, 255, 255, 0.025) 30px,
+			rgba(255, 255, 255, 0.025) 31px);
+	pointer-events: none;
+}
+
+.header h1 {
+	margin: 0 0 8px;
+	font-size: 2rem;
+	font-weight: 700;
+	color: #fff;
+	letter-spacing: -0.5px;
+	line-height: 1.2;
+	position: relative;
+}
+
+/* WP-blue accent bar under the title */
+.header h1::after {
+	content: "";
+	display: block;
+	width: 48px;
+	height: 3px;
+	background: #2271b1;
+	border-radius: 2px;
+	margin: 10px auto 0;
+}
+
+.header p,
+.header .subtitle {
+	margin: 12px 0 0;
+	color: #a7aaad;
+	font-size: 0.95rem;
+	position: relative;
+}
+
+/* Main content wrapper — gives breathing room below the header */
+.main-content {
+	padding: 32px 20px 40px;
 }
 
 .search-container {
-	margin-top: 20px;
+	margin-top: 0;
+	margin-bottom: 32px;
 	display: flex;
 	justify-content: center;
 }
 
 .search-input {
 	width: 100%;
-	max-width: 400px;
-	padding: 12px 20px;
-	font-size: 16px;
-	border: 2px solid #ddd;
-	border-radius: 25px;
+	max-width: 460px;
+	padding: 13px 22px;
+	font-size: 15px;
+	border: 2px solid #c3c4c7;
+	border-radius: 6px;
 	outline: none;
-	transition: border-color 0.3s ease;
+	background: #fff;
+	color: #1d2327;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+	margin-top: 1rem;
+}
+
+.search-input::placeholder {
+	color: #a7aaad;
 }
 
 .search-input:focus {
-	border-color: #0073aa;
+	border-color: #2271b1;
+	box-shadow: 0 0 0 3px rgba(34, 113, 177, 0.15);
 }
 
 /* Block Grid Styles */
@@ -64,8 +126,8 @@ body {
 	display: flex;
 	align-items: center;
 	padding: 20px;
-	background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-	border-bottom: 1px solid #e9ecef;
+	background: linear-gradient(160deg, #ffffff 0%, #f0f0f1 100%);
+	border-bottom: 1px solid #e2e4e7;
 }
 
 .block-icon {
@@ -106,7 +168,7 @@ body {
 	font-size: 0.9rem;
 	color: #3c434e;
 	line-height: 1.5;
-	margin: 0 0 15px 0;
+	margin: 0 0 30px 0;
 	display: -webkit-box;
 	-webkit-line-clamp: 3;
 	-webkit-box-orient: vertical;
@@ -339,6 +401,11 @@ body {
 }
 
 @keyframes spin {
-	0% { transform: rotate(0deg); }
-	100% { transform: rotate(360deg); }
+	0% {
+		transform: rotate(0deg);
+	}
+
+	100% {
+		transform: rotate(360deg);
+	}
 }
