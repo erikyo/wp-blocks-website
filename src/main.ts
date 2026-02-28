@@ -1,6 +1,6 @@
 import "./style.css";
-import type {Plugin, PluginBlock, PluginIcons} from "./types.ts";
-import {DOMCache} from "./DOMCache.ts";
+import type { Plugin, PluginBlock, PluginIcons } from "./types.ts";
+import { DOMCache } from "./DOMCache.ts";
 
 // Initialize cached DOM elements with error handling
 const gridContainer = DOMCache.getElement("block-grid");
@@ -154,7 +154,7 @@ class ErrorHandler {
                 if (loadingText) loadingText.style.display = "none";
             }, 3000);
         }
-        
+
         // Ensure loading state is reset
         AppState.isLoading = false;
     }
@@ -233,19 +233,23 @@ async function reloadToCurrentState(): Promise<void> {
     AppState.currentAbortController = new AbortController();
     const { signal } = AppState.currentAbortController;
 
-    // Function to abort on scroll
+    // Function to abort on user scroll
     const abortOnScroll = () => {
         if (AppState.currentAbortController) {
             AppState.currentAbortController.abort();
-            console.log('Reload operation aborted due to scroll');
+            console.log('Reload operation aborted due to user scroll');
         }
     };
 
-    // Add scroll listener to abort on user scroll
-    window.addEventListener('scroll', abortOnScroll, { once: true });
+    // Use wheel and touchmove to detect actual user interaction, ignoring programmatic scrolls
+    window.addEventListener('wheel', abortOnScroll, { once: true });
+    window.addEventListener('touchmove', abortOnScroll, { once: true });
 
     try {
-        for (let p = 1; p <= AppState.currentPage; p++) {
+        const targetPage = AppState.currentPage;
+        let fetchedUpTo = 1;
+
+        for (let p = 1; p <= targetPage; p++) {
             // Check if request was aborted before starting new fetch
             if (signal.aborted) {
                 console.log('Reload operation was aborted');
@@ -255,6 +259,11 @@ async function reloadToCurrentState(): Promise<void> {
             const previousChildCount = gridContainer?.children.length || 0;
 
             await fetchBlocks(p, AppState.searchTerm, p > 1, signal);
+
+            // fetchBlocks(1) with append=false resets AppState.currentPage to 1
+            // We update it to reflect the pages we've successfully loaded so far
+            fetchedUpTo = p;
+            AppState.currentPage = fetchedUpTo;
 
             // Check if request was aborted after fetch
             if (signal.aborted) {
@@ -274,11 +283,15 @@ async function reloadToCurrentState(): Promise<void> {
 
             if (AppState.hasReachedEnd) break;
         }
+
+        // Ensure the final state reflects what we aimed to load
+        AppState.currentPage = Math.max(fetchedUpTo, AppState.currentPage);
     } catch (error) {
         ErrorHandler.handleAPIError(error, 'reloadToCurrentState');
     } finally {
         // Clean up: remove scroll listener and reset abort controller
-        window.removeEventListener('scroll', abortOnScroll);
+        window.removeEventListener('wheel', abortOnScroll);
+        window.removeEventListener('touchmove', abortOnScroll);
         AppState.currentAbortController = null;
     }
 }
@@ -354,15 +367,28 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
             plugin.blocks && Object.keys(plugin.blocks).length > 0
         );
 
-        // Auto-fetch more data if needed (only for initial non-search requests)
+        // Render only the new plugins with blocks to avoid duplicates
+        renderBlocks(pluginsWithBlocks, append);
+
+        if (loadingText) loadingText.style.display = "none";
+        updateLoadMoreIndicator(!AppState.hasReachedEnd);
+
+        // Auto-fetch more data if no plugins with blocks were found in this batch
+        // or if it is the initial load and we don't have enough block plugins yet
         const currentBlockPlugins = AppState.allPlugins.filter(plugin =>
             plugin.blocks && Object.keys(plugin.blocks).length > 0
         ).length;
 
-        if (!append && !search && currentBlockPlugins < MIN_BLOCK_PLUGINS_NEEDED && !AppState.hasReachedEnd) {
-            console.log(`Only ${currentBlockPlugins} plugins with blocks found, fetching more...`);
+        const needsMoreInitialPlugins = !append && !search && currentBlockPlugins < MIN_BLOCK_PLUGINS_NEEDED;
+        const noBlocksInBatch = pluginsWithBlocks.length === 0;
+
+        if ((needsMoreInitialPlugins || noBlocksInBatch) && !AppState.hasReachedEnd) {
+            console.log(`Need more plugins with blocks, fetching next page...`);
+            AppState.currentPage = page + 1;
+            updateHistory(AppState.searchTerm, AppState.currentPage, false);
             try {
-                await fetchBlocks(page + 1, search, true, abortSignal);
+                AppState.isLoading = false; // Allow recursive call
+                await fetchBlocks(AppState.currentPage, search, true, abortSignal);
             } catch (error) {
                 // Ensure loading state is reset if recursive call fails
                 AppState.isLoading = false;
@@ -370,12 +396,6 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
             }
             return;
         }
-
-        // Render only the new plugins with blocks to avoid duplicates
-        renderBlocks(pluginsWithBlocks, append);
-
-        if (loadingText) loadingText.style.display = "none";
-        updateLoadMoreIndicator(!AppState.hasReachedEnd);
     } catch (error) {
         ErrorHandler.handleAPIError(error, 'fetchBlocks');
     } finally {
@@ -454,8 +474,12 @@ function renderBlocks(pluginsToRender: Plugin[], append = false): void {
 
     // Handle empty results for fresh searches
     if (pluginsToRender.length === 0 && !append) {
-        gridContainer.innerHTML =
-            "<div class='no-results'>No plugins found matching your search.</div>";
+        if (AppState.hasReachedEnd) {
+            gridContainer.innerHTML =
+                "<div class='no-results'>No plugins found matching your search.</div>";
+        } else {
+            gridContainer.innerHTML = "";
+        }
         return;
     }
 
@@ -785,7 +809,9 @@ const handleScroll = PerformanceUtils.throttle(() => {
     if (scrollTop + windowHeight >= documentHeight - SCROLL_THRESHOLD) {
         AppState.currentPage++;
         updateHistory(AppState.searchTerm, AppState.currentPage, false);
-        fetchBlocks(AppState.currentPage, AppState.searchTerm, true);
+
+        AppState.currentAbortController = new AbortController();
+        fetchBlocks(AppState.currentPage, AppState.searchTerm, true, AppState.currentAbortController.signal);
     }
 }, 100); // Throttle to once every 100ms
 
