@@ -13,6 +13,7 @@ body {
 	position: relative;
 	overflow: hidden;
 	margin-bottom: 3rem;
+	z-index: 0;
 }
 
 /* Subtle diagonal stripe pattern — feels like WP admin bars */
@@ -26,6 +27,13 @@ body {
 			rgba(255, 255, 255, 0.025) 30px,
 			rgba(255, 255, 255, 0.025) 31px);
 	pointer-events: none;
+}
+
+.header .gh-fork-ribbon {
+	position: absolute;
+	top: 0;
+	right: 0;
+	z-index: 9999;
 }
 
 .header h1 {
@@ -95,9 +103,7 @@ body {
 
 /* Block Grid Styles */
 .block-grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-	gap: 24px;
+	position: relative;
 	max-width: 1200px;
 	margin: 0 auto;
 }
@@ -114,7 +120,14 @@ body {
 	overflow: hidden;
 	display: flex;
 	flex-direction: column;
-	height: 100%;
+	width: 320px;
+	position: absolute;
+}
+
+@media screen and (max-width: 760px) {
+	.block-card {
+		margin: 24px;
+	}
 }
 
 .block-card:hover {
@@ -219,6 +232,22 @@ body {
 	padding: 2px 6px;
 	border-radius: 3px;
 	text-transform: capitalize;
+}
+
+.more-blocks-tag {
+	background: #f0f6fc;
+	border-left-color: #0969da;
+}
+
+.more-blocks-tag .block-name {
+	font-style: italic;
+	color: #0969da;
+}
+
+.more-blocks-tag .block-category {
+	background: #0969da;
+	color: white;
+	font-weight: 500;
 }
 
 .plugin-stats {
