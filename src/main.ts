@@ -149,7 +149,14 @@ class ErrorHandler {
             } else {
                 loadingText.innerText = "Error loading plugins. Please try again.";
             }
+            // Hide loading text after a delay to show the error message
+            setTimeout(() => {
+                if (loadingText) loadingText.style.display = "none";
+            }, 3000);
         }
+        
+        // Ensure loading state is reset
+        AppState.isLoading = false;
     }
 
     /**
@@ -354,7 +361,13 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
 
         if (!append && !search && currentBlockPlugins < MIN_BLOCK_PLUGINS_NEEDED && !AppState.hasReachedEnd) {
             console.log(`Only ${currentBlockPlugins} plugins with blocks found, fetching more...`);
-            await fetchBlocks(page + 1, search, true, abortSignal);
+            try {
+                await fetchBlocks(page + 1, search, true, abortSignal);
+            } catch (error) {
+                // Ensure loading state is reset if recursive call fails
+                AppState.isLoading = false;
+                throw error;
+            }
             return;
         }
 
