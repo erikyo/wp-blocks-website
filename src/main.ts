@@ -1,6 +1,50 @@
+/**
+ * WordPress Block Browser
+ *
+ * A modern web application for browsing and testing WordPress block plugins.
+ * Features include:
+ * - Search and filter WordPress block plugins
+ * - Masonry grid layout with lazy loading
+ * - Interactive playground testing via WordPress Playground
+ * - Infinite scroll and pagination
+ * - Responsive design with performance optimizations
+ *
+ * @author WordPress Block Browser Team
+ * @version 1.0.0
+ */
+
+// Import external dependencies
+import MiniMasonry from "minimasonry";
+
+// Import internal modules
 import "./style.css";
 import type { Plugin, PluginBlock, PluginIcons } from "./types.ts";
 import { DOMCache } from "./DOMCache.ts";
+
+// ====================================================================
+// CONSTANTS AND CONFIGURATION
+// ====================================================================
+
+/** API endpoints */
+const API_BASE_URL = "https://api.wordpress.org/plugins/info/1.2/?action=query_plugins";
+const PLAYGROUND_BASE_URL = "https://playground.wordpress.net/";
+
+/** Pagination and display settings */
+const PLUGINS_PER_PAGE = 20;
+const MIN_BLOCK_PLUGINS_NEEDED = 3;
+const MAX_EMPTY_RESPONSES = 5;
+
+/** Scroll and interaction thresholds */
+const SCROLL_THRESHOLD = 200;
+const SCROLL_UP_THRESHOLD = 300;
+const SEARCH_DEBOUNCE_DELAY = 300;
+
+/** Default assets */
+const DEFAULT_ICON = "https://s.w.org/plugins/geopattern-icon/block-default.svg";
+
+// ====================================================================
+// DOM ELEMENT CACHING
+// ====================================================================
 
 // Initialize cached DOM elements with error handling
 const gridContainer = DOMCache.getElement("block-grid");
@@ -10,15 +54,21 @@ const modal = DOMCache.getElement("playground-modal");
 const iframe = DOMCache.getTypedElement("playground-iframe", HTMLIFrameElement);
 const closeBtn = DOMCache.getElement("close-modal");
 
+// ====================================================================
+// GLOBAL STATE VARIABLES
+// ====================================================================
 
-// Constants for better maintainability
-const API_BASE_URL = "https://api.wordpress.org/plugins/info/1.2/?action=query_plugins";
-const PLAYGROUND_BASE_URL = "https://playground.wordpress.net/";
-const PLUGINS_PER_PAGE = 15;
-const MIN_BLOCK_PLUGINS_NEEDED = 3;
-const SCROLL_THRESHOLD = 200;
-const SEARCH_DEBOUNCE_DELAY = 300;
-const DEFAULT_ICON = "https://s.w.org/plugins/geopattern-icon/block-default.svg";
+/** MiniMasonry instance for masonry layout */
+let masonryInstance: MiniMasonry | null = null;
+
+/** Track last scroll position for scroll direction detection */
+let lastScrollTop = 0;
+
+/** Track the maximum page number reached for proper scroll-down behavior */
+let maxPageReached = 1;
+
+/** Track last scroll trigger time to prevent rapid triggers */
+let lastScrollTriggerTime = 0;
 
 /**
  * Validates that all required DOM elements are present
@@ -46,9 +96,16 @@ function validateDOMElements(): void {
 // Validate DOM elements on initialization
 validateDOMElements();
 
+// ====================================================================
+// APPLICATION STATE MANAGEMENT
+// ====================================================================
+
 /**
  * Application state management
- * Centralizes global state variables for better maintainability
+ *
+ * Centralizes global state variables for better maintainability and prevents
+ * state-related bugs by providing controlled access to application data.
+ * Uses static class pattern to ensure single source of truth for all state.
  */
 class AppState {
     private static _currentPage: number = 1;
@@ -57,6 +114,7 @@ class AppState {
     private static _searchTerm: string = "";
     private static _hasReachedEnd: boolean = false;
     private static _currentAbortController: AbortController | null = null;
+    private static _emptyResponseCount: number = 0;
 
     static get currentPage(): number { return this._currentPage; }
     static set currentPage(value: number) { this._currentPage = Math.max(1, value); }
@@ -76,6 +134,9 @@ class AppState {
     static get currentAbortController(): AbortController | null { return this._currentAbortController; }
     static set currentAbortController(value: AbortController | null) { this._currentAbortController = value; }
 
+    static get emptyResponseCount(): number { return this._emptyResponseCount; }
+    static set emptyResponseCount(value: number) { this._emptyResponseCount = Math.max(0, value); }
+
     /**
      * Resets state for new searches
      */
@@ -83,12 +144,18 @@ class AppState {
         this._allPlugins = [];
         this._hasReachedEnd = false;
         this._currentPage = 1;
+        this._emptyResponseCount = 0;
     }
 }
 
+// ====================================================================
+// INPUT VALIDATION AND SECURITY
+// ====================================================================
 /**
  * Input validation and sanitization utilities
- * Ensures data integrity and security
+ *
+ * Ensures data integrity and security by validating and sanitizing all user inputs.
+ * Prevents XSS attacks and malformed data from affecting the application.
  */
 class InputValidator {
     /**
@@ -128,9 +195,14 @@ class InputValidator {
     }
 }
 
+// ====================================================================
+// ERROR HANDLING UTILITIES
+// ====================================================================
 /**
  * Error handling utilities
- * Provides centralized error management
+ *
+ * Provides centralized error management with user-friendly error messages.
+ * Handles different types of errors appropriately and ensures graceful degradation.
  */
 class ErrorHandler {
     /**
@@ -143,16 +215,24 @@ class ErrorHandler {
 
         if (loadingText) {
             if (error instanceof Error && error.name === 'AbortError') {
-                loadingText.innerText = "Request cancelled.";
+                // Don't show "Request cancelled" message for intentional cancellations
+                // These are normal user actions (typing in search, scrolling, etc.)
+                // Only show error message for unexpected aborts
+                // For now, we'll silently ignore AbortError as it's expected behavior
+                setTimeout(() => {
+                    if (loadingText) loadingText.style.display = "none";
+                }, 100);
             } else if (error instanceof Error && error.message.includes('Failed to fetch')) {
                 loadingText.innerText = "Network error. Please check your connection.";
+                setTimeout(() => {
+                    if (loadingText) loadingText.style.display = "none";
+                }, 3000);
             } else {
                 loadingText.innerText = "Error loading plugins. Please try again.";
+                setTimeout(() => {
+                    if (loadingText) loadingText.style.display = "none";
+                }, 3000);
             }
-            // Hide loading text after a delay to show the error message
-            setTimeout(() => {
-                if (loadingText) loadingText.style.display = "none";
-            }, 3000);
         }
 
         // Ensure loading state is reset
@@ -173,6 +253,10 @@ class ErrorHandler {
         }
     }
 }
+
+// ====================================================================
+// URL AND HISTORY MANAGEMENT
+// ====================================================================
 
 // Initialize application state with validated parameters
 const urlParams = new URLSearchParams(window.location.search);
@@ -208,11 +292,9 @@ function updateHistory(search: string, page: number, push = false): void {
         url.searchParams.delete("search");
     }
 
-    if (validatedPage > 1) {
-        url.searchParams.set("page", validatedPage.toString());
-    } else {
-        url.searchParams.delete("page");
-    }
+    // Always set page parameter to ensure it's properly tracked
+    // This fixes the issue where page parameter gets lost during search
+    url.searchParams.set("page", validatedPage.toString());
 
     const state = { search: sanitizedSearch, page: validatedPage };
     if (push) {
@@ -224,10 +306,18 @@ function updateHistory(search: string, page: number, push = false): void {
 
 /**
  * Reloads the current state from URL parameters
- * Handles aborting operations and scroll management
+ *
+ * Handles aborting operations and scroll management. Implements intelligent page loading
+ * with scroll-based abort functionality to provide responsive user experience.
+ *
+ * @returns Promise that resolves when state is fully reloaded
  */
 async function reloadToCurrentState(): Promise<void> {
     AppState.isLoading = false;
+    AppState.emptyResponseCount = 0; // Reset empty response counter for reload
+
+    // Update max page reached to match the target page we're loading
+    maxPageReached = Math.max(maxPageReached, AppState.currentPage);
 
     // Create new abort controller for this reload operation
     AppState.currentAbortController = new AbortController();
@@ -275,9 +365,23 @@ async function reloadToCurrentState(): Promise<void> {
             if (p > 1 && gridContainer && gridContainer.children.length > previousChildCount) {
                 const elementToScrollTo = gridContainer.children[previousChildCount] as HTMLElement;
                 if (elementToScrollTo) {
-                    // Use a small delay to ensure DOM is updated before scrolling
+                    // Wait for masonry layout to be calculated before scrolling
+                    await new Promise(resolve => setTimeout(resolve, 150));
+
+                    // Force masonry layout recalculation to ensure proper positioning
+                    if (masonryInstance) {
+                        masonryInstance.layout();
+                    }
+
+                    // Additional delay to ensure DOM is fully updated
                     await new Promise(resolve => setTimeout(resolve, 100));
-                    elementToScrollTo.scrollIntoView({ behavior: "smooth", block: "start" });
+
+                    // Scroll to the bottom of the page instead of specific element
+                    // This works better with masonry layout
+                    window.scrollTo({
+                        top: document.documentElement.scrollHeight,
+                        behavior: "smooth"
+                    });
                 }
             }
 
@@ -296,7 +400,9 @@ async function reloadToCurrentState(): Promise<void> {
     }
 }
 
-// Build API URL with search and pagination
+// ====================================================================
+// API AND DATA FETCHING
+// ====================================================================
 /**
  * Constructs the WordPress.org API URL for fetching plugins
  * @param page - The page number to fetch (default: 1)
@@ -324,6 +430,11 @@ function buildApiUrl(page = 1, search = ""): string {
 // Fetch the blocks from WordPress.org
 /**
  * Fetches WordPress plugins from the API with optional search and pagination
+ *
+ * Handles complex pagination logic including auto-fetching when plugins don't contain blocks,
+ * and manages loading states and error scenarios. Implements intelligent fetching strategies
+ * to ensure users always see block plugins even when API returns non-block plugins.
+ *
  * @param page - The page number to fetch (default: 1)
  * @param search - The search term to filter plugins (default: "")
  * @param append - Whether to append to existing results or replace them (default: false)
@@ -339,8 +450,12 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
     // Reset state for fresh searches
     if (!append) {
         AppState.resetForNewSearch();
+        maxPageReached = page; // Reset maxPageReached to current page for fresh searches
         if (loadingText) loadingText.style.display = "block";
         if (gridContainer) gridContainer.innerHTML = "";
+    } else if (loadingText && loadingText.style.display === "none") {
+        // For recursive calls, ensure loading text is visible if it was hidden
+        loadingText.style.display = "block";
     }
 
     try {
@@ -355,7 +470,9 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
         const newPlugins = data.plugins || [];
 
         // Update pagination state
-        if (newPlugins.length < PLUGINS_PER_PAGE) {
+        // Only mark as reached end if we get fewer plugins than expected AND we're not on the first page
+        // This handles cases where API might return empty results temporarily
+        if (newPlugins.length < PLUGINS_PER_PAGE && page > 1) {
             AppState.hasReachedEnd = true;
         }
 
@@ -370,7 +487,7 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
         // Render only the new plugins with blocks to avoid duplicates
         renderBlocks(pluginsWithBlocks, append);
 
-        if (loadingText) loadingText.style.display = "none";
+        // Don't hide loading text yet - we might continue fetching
         updateLoadMoreIndicator(!AppState.hasReachedEnd);
 
         // Auto-fetch more data if no plugins with blocks were found in this batch
@@ -380,12 +497,44 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
         ).length;
 
         const needsMoreInitialPlugins = !append && !search && currentBlockPlugins < MIN_BLOCK_PLUGINS_NEEDED;
-        const noBlocksInBatch = pluginsWithBlocks.length === 0;
+        const noBlocksInBatch = pluginsWithBlocks.length === 0; // This is the key condition - plugins exist but none have blocks
+        const hasPlugins = newPlugins.length > 0;
 
-        if ((needsMoreInitialPlugins || noBlocksInBatch) && !AppState.hasReachedEnd) {
-            console.log(`Need more plugins with blocks, fetching next page...`);
+        // Update counter for responses with plugins but no blocks
+        if (hasPlugins && noBlocksInBatch) {
+            AppState.emptyResponseCount++;
+            console.log(`Response with plugins but no blocks #${AppState.emptyResponseCount} for page ${page} (${newPlugins.length} plugins)`);
+        } else if (noBlocksInBatch && !hasPlugins) {
+            // True empty response
+            AppState.emptyResponseCount++;
+            console.log(`Truly empty response #${AppState.emptyResponseCount} for page ${page}`);
+        } else {
+            AppState.emptyResponseCount = 0; // Reset counter when we get plugins with blocks
+        }
+
+        // Continue fetching if we got plugins but no blocks, or need more initial plugins
+        // but haven't reached end and haven't exceeded max empty responses
+        const shouldContinueFetching = (noBlocksInBatch) &&
+                                     !AppState.hasReachedEnd &&
+                                     AppState.emptyResponseCount < MAX_EMPTY_RESPONSES;
+
+        // Also continue if we need more initial plugins
+        const shouldContinueForInitialLoad = needsMoreInitialPlugins && !AppState.hasReachedEnd;
+
+        if (shouldContinueFetching || shouldContinueForInitialLoad) {
+            console.log(`Auto-fetching page ${page + 1} - no blocks: ${noBlocksInBatch}, has plugins: ${hasPlugins}, needs initial: ${needsMoreInitialPlugins}, empty count: ${AppState.emptyResponseCount}`);
+            
+            // Store current page before auto-fetch
+            const userVisiblePage = AppState.currentPage;
+            
             AppState.currentPage = page + 1;
             updateHistory(AppState.searchTerm, AppState.currentPage, false);
+            
+            // Update maxPageReached for auto-fetched pages
+            if (AppState.currentPage > maxPageReached) {
+                maxPageReached = AppState.currentPage;
+            }
+            
             try {
                 AppState.isLoading = false; // Allow recursive call
                 await fetchBlocks(AppState.currentPage, search, true, abortSignal);
@@ -395,13 +544,23 @@ async function fetchBlocks(page = 1, search = "", append = false, abortSignal?: 
                 throw error;
             }
             return;
+        } else if (AppState.emptyResponseCount >= MAX_EMPTY_RESPONSES) {
+            console.log(`Reached maximum responses with no blocks (${MAX_EMPTY_RESPONSES}), stopping auto-fetch`);
+            AppState.hasReachedEnd = true;
         }
+
+        // Only hide loading text when we're actually done fetching
+        if (loadingText) loadingText.style.display = "none";
     } catch (error) {
         ErrorHandler.handleAPIError(error, 'fetchBlocks');
     } finally {
         AppState.isLoading = false;
     }
 }
+
+// ====================================================================
+// UI RENDERING AND DISPLAY UTILITIES
+// ====================================================================
 
 /**
  * Formats the plugin rating into star display
@@ -452,17 +611,54 @@ function getPluginIcon(icons: PluginIcons): string {
  * @returns HTML string for blocks list
  */
 function generateBlocksList(blocks: Record<string, PluginBlock>): string {
-    return Object.values(blocks).map(block =>
+    const blocksArray = Object.values(blocks);
+    const displayBlocks = blocksArray.slice(0, 8);
+    const remainingCount = blocksArray.length - 8;
+
+    let html = displayBlocks.map(block =>
         `<div class="block-item">
             <span class="block-name">${block.title}</span>
             <span class="block-category">${block.category}</span>
         </div>`
     ).join('');
+
+    // Add "and other X blocks" tag if there are more than 8 blocks
+    if (remainingCount > 0) {
+        html += `<div class="block-item more-blocks-tag">
+            <span class="block-name">and other ${remainingCount} blocks</span>
+            <span class="block-category">more</span>
+        </div>`;
+    }
+
+    return html;
 }
 
-// Render the blocks into the HTML grid
+// ====================================================================
+// MASONRY LAYOUT MANAGEMENT
+// ====================================================================
+/**
+ * Initializes MiniMasonry layout
+ */
+function initializeMasonry(): void {
+    if (!gridContainer) return;
+
+    masonryInstance = new MiniMasonry({
+        container: gridContainer,
+        baseWidth: 360,
+        gutterX: 24,
+        gutterY: 24,
+        surroundingGutter: true,
+        wedge: false,
+        minify: true
+    });
+}
+
 /**
  * Renders plugin cards into the grid container
+ *
+ * Handles both fresh renders and append operations for infinite scroll.
+ * Manages masonry layout initialization and updates for optimal visual presentation.
+ *
  * @param pluginsToRender - Array of plugins to render
  * @param append - Whether to append to existing content or replace it (default: false)
  */
@@ -480,12 +676,20 @@ function renderBlocks(pluginsToRender: Plugin[], append = false): void {
         } else {
             gridContainer.innerHTML = "";
         }
+        if (masonryInstance) {
+            masonryInstance.destroy();
+            masonryInstance = null;
+        }
         return;
     }
 
     // Clear grid for fresh searches
     if (!append) {
         gridContainer.innerHTML = "";
+        if (masonryInstance) {
+            masonryInstance.destroy();
+            masonryInstance = null;
+        }
     }
 
     // Create document fragment for better performance
@@ -497,10 +701,28 @@ function renderBlocks(pluginsToRender: Plugin[], append = false): void {
     });
 
     gridContainer.appendChild(fragment);
+
+    // Initialize or update masonry layout
+    if (!masonryInstance) {
+        initializeMasonry();
+    } else {
+        // Force layout recalculation after adding new items
+        setTimeout(() => {
+            if (masonryInstance) {
+                masonryInstance.layout();
+            }
+        }, 100);
+    }
 }
 
+// ====================================================================
+// PERFORMANCE OPTIMIZATION UTILITIES
+// ====================================================================
 /**
  * Performance utilities for optimizing application behavior
+ *
+ * Provides performance optimization tools including lazy loading, debouncing,
+ * and throttling to ensure smooth user experience and efficient resource usage.
  */
 class PerformanceUtils {
     /**
@@ -564,6 +786,9 @@ class PerformanceUtils {
         };
     }
 }
+// ====================================================================
+// PLUGIN CARD CREATION
+// ====================================================================
 /**
  * Creates a plugin card element with lazy loading for images
  * @param plugin - Plugin data
@@ -647,6 +872,12 @@ function createPluginCard(plugin: Plugin): HTMLElement {
         // Hide placeholder when image loads
         iconImg.addEventListener('load', () => {
             if (placeholder) placeholder.style.display = 'none';
+            // Trigger masonry layout recalculation when image loads
+            if (masonryInstance) {
+                setTimeout(() => {
+                    masonryInstance.layout();
+                }, 50);
+            }
         });
 
         // Handle image load errors
@@ -663,6 +894,10 @@ function createPluginCard(plugin: Plugin): HTMLElement {
 
     return card;
 }
+
+// ====================================================================
+// WORDPRESS PLAYGROUND INTEGRATION
+// ====================================================================
 
 // Blueprint interface for WordPress Playground
 interface PlaygroundBlueprint {
@@ -768,7 +1003,9 @@ async function openPlayground(pluginSlug: string): Promise<void> {
     }
 }
 
-// Update load more indicator
+// ====================================================================
+// USER INTERFACE CONTROLS
+// ====================================================================
 /**
  * Updates the load more indicator visibility and message
  * @param hasMore - Whether there are more plugins to load
@@ -794,24 +1031,55 @@ function updateLoadMoreIndicator(hasMore: boolean): void {
     }
 }
 
+// ====================================================================
+// EVENT HANDLERS AND INTERACTIONS
+// ====================================================================
 /**
  * Handles infinite scroll functionality to load more plugins
  * Uses throttling to improve performance
  */
 const handleScroll = PerformanceUtils.throttle(() => {
-    if (AppState.isLoading) return;
+    if (AppState.isLoading || AppState.hasReachedEnd) return;
 
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
     const windowHeight = window.innerHeight;
     const documentHeight = document.documentElement.scrollHeight;
+    const scrollDirection = scrollTop > lastScrollTop ? 'down' : 'up';
+    const currentTime = Date.now();
 
-    // Load more when user is within threshold distance of the bottom
-    if (scrollTop + windowHeight >= documentHeight - SCROLL_THRESHOLD) {
-        AppState.currentPage++;
-        updateHistory(AppState.searchTerm, AppState.currentPage, false);
+    // Update last scroll position
+    lastScrollTop = scrollTop;
 
-        AppState.currentAbortController = new AbortController();
-        fetchBlocks(AppState.currentPage, AppState.searchTerm, true, AppState.currentAbortController.signal);
+    // Load more when user is within threshold distance of the bottom (scrolling down)
+    if (scrollDirection === 'down' && scrollTop + windowHeight >= documentHeight - SCROLL_THRESHOLD) {
+        // Add additional debounce to prevent rapid triggers
+        if (currentTime - lastScrollTriggerTime < 500) {
+            return; // Skip if triggered too recently
+        }
+        
+        // Only load if we haven't already loaded this page
+        // Check if current page is less than or equal to max page reached
+        if (AppState.currentPage <= maxPageReached) {
+            AppState.currentPage = maxPageReached + 1;
+            maxPageReached = AppState.currentPage; // Update max page reached
+            lastScrollTriggerTime = currentTime; // Update trigger time
+            updateHistory(AppState.searchTerm, AppState.currentPage, false);
+
+            console.log(`Loading page ${AppState.currentPage} for infinite scroll`);
+            AppState.currentAbortController = new AbortController();
+            fetchBlocks(AppState.currentPage, AppState.searchTerm, true, AppState.currentAbortController.signal);
+        }
+    }
+    // Decrease page when user scrolls up significantly and is not at the top
+    else if (scrollDirection === 'up' && scrollTop > SCROLL_UP_THRESHOLD && AppState.currentPage > 1) {
+        // Calculate approximate page based on scroll position
+        const scrollPercentage = scrollTop / documentHeight;
+        const approximatePage = Math.max(1, Math.ceil(scrollPercentage * maxPageReached));
+
+        if (approximatePage < AppState.currentPage) {
+            AppState.currentPage = approximatePage;
+            updateHistory(AppState.searchTerm, AppState.currentPage, false);
+        }
     }
 }, 100); // Throttle to once every 100ms
 
@@ -824,8 +1092,17 @@ const handleSearch = PerformanceUtils.debounce((event: Event) => {
     const value = target.value;
     AppState.searchTerm = value;
 
+    // Cancel any ongoing request when starting a new search
+    if (AppState.currentAbortController) {
+        AppState.currentAbortController.abort();
+    }
+
+    // Reset page to 1 for new search and update history immediately
     AppState.currentPage = 1;
+    maxPageReached = 1; // Reset max page reached for new search
     updateHistory(AppState.searchTerm, AppState.currentPage, true);
+
+    // Fetch blocks with explicit page 1 to ensure consistency
     fetchBlocks(1, AppState.searchTerm, false);
 }, SEARCH_DEBOUNCE_DELAY);
 
@@ -838,6 +1115,18 @@ function closeModal(): void {
 }
 
 /**
+ * Handles window resize events to recalculate masonry layout
+ */
+const handleResize = PerformanceUtils.debounce(() => {
+    if (masonryInstance) {
+        masonryInstance.layout();
+    }
+}, 250);
+
+// ====================================================================
+// APPLICATION INITIALIZATION
+// ====================================================================
+/**
  * Sets up event listeners with proper error handling
  */
 function setupEventListeners(): void {
@@ -846,6 +1135,7 @@ function setupEventListeners(): void {
     }
 
     window.addEventListener("scroll", handleScroll);
+    window.addEventListener("resize", handleResize);
 
     if (searchInput) {
         searchInput.addEventListener("input", handleSearch);
@@ -880,6 +1170,12 @@ function setupEventListeners(): void {
  */
 function initializeApp(): void {
     try {
+        // Initialize scroll position tracking
+        lastScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+
+        // Initialize max page reached with current page from URL
+        maxPageReached = AppState.currentPage;
+
         setupEventListeners();
         reloadToCurrentState().catch(error => {
             ErrorHandler.handleUnexpectedError(error, () => {
