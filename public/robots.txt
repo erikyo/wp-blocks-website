@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://wp-blocks.com/sitemap.xml
